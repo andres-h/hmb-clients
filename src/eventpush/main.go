@@ -70,6 +70,8 @@ func main() {
 		}
 	}
 
+	log.Printf("eventpush v%s started", VERSION)
+
 	// The actual payload of the message.
 	var data map[string]interface{}
 
