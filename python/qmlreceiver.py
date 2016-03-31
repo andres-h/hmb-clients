@@ -19,7 +19,7 @@ def handleEvent(data, gpg):
         f.flush()
         verified = gpg.verify_data(f.name, data['zquakeml'])
 
-    if verified.trust_level < verified.TRUST_FULLY:
+    if verified.trust_level is None or verified.trust_level < verified.TRUST_FULLY:
         print("signature not trusted, ignoring message")
         return
 
