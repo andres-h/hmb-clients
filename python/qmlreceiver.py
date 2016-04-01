@@ -3,11 +3,12 @@
 import sys
 import zlib
 import tempfile
+import datetime
 import gnupg
 from optparse import OptionParser
 from hmb.client import HMB
 
-VERSION = "0.2 (2016.090)"
+VERSION = "0.2 (2016.092)"
 
 RETRY_WAIT = 10
 
@@ -20,10 +21,12 @@ def handleEvent(data, gpg):
         verified = gpg.verify_data(f.name, data['zquakeml'])
 
     if verified.trust_level is None or verified.trust_level < verified.TRUST_FULLY:
-        print("signature not trusted, ignoring message")
+        print("signature not trusted, ignoring message", end="\n\n")
         return
 
-    print("trusted signature from:", verified.username)
+    print("signed at",
+        datetime.datetime.utcfromtimestamp(int(verified.sig_timestamp)), "UTC",
+        "by", verified.username, end="\n\n")
 
     with open(data['eventID'] + '.xml', 'wb') as f:
         f.write(zlib.decompress(data['zquakeml']))
