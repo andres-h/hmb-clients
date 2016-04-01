@@ -18,6 +18,7 @@ import (
 	"compress/zlib"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	_log "log"
 	"log/syslog"
@@ -25,7 +26,7 @@ import (
 	"os/exec"
 )
 
-const VERSION = "0.2 (2016.090)"
+const VERSION = "0.2 (2016.092)"
 
 const (
 	// Syslog facility.
@@ -40,6 +41,7 @@ var log = _log.New(os.Stdout, "", _log.LstdFlags)
 
 func main() {
 	sink := flag.String("H", "", "Destination HMB URL")
+	showVersion := flag.Bool("V", false, "Show program's version and exit")
 	gnupghome := flag.String("g", "", "GnuPG home directory (default $HOME/.gnupg)")
 	jsonfile := flag.String("j", "", "JSON metadata file")
 	qmlfile := flag.String("q", "", "QuakeML XML data file")
@@ -47,6 +49,11 @@ func main() {
 	timeout := flag.Int("t", 120, "HMB timeout in seconds")
 
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("eventpush v%s\n", VERSION)
+		return
+	}
 
 	if *sink == "" {
 		log.Fatal("missing destination HMB URL")
