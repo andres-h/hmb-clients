@@ -1,1 +1,4 @@
-hmb.client module is in the httpmsgbus repository.
+hmb.client module is in the httpmsgbus repository and is installed in
+~/seiscomp3/lib/python by default. Use PYTHONPATH=~/seiscomp3/lib/python
+
+Dependencies: python3-requests, python3-certifi, python3-pymongo.
