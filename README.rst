@@ -3,8 +3,8 @@ Installation
 
 Install Go from https://golang.org/dl/
 
-then:
-::
+then::
+
   export GOPATH=`pwd`
   go get -u bitbucket.org/andresh/hmb-clients/src/eventpush
 
@@ -29,8 +29,8 @@ eventpush needs a metadata file in JSON format (-j), a quakeml XML file
 (-q) and an HMB URL (-H) to push the event to. Optionally the GPG home
 directory (-g) can be specified.
 
-The metadata should contain standard GDACS attributes, eg.:
-::
+The metadata should contain standard GDACS attributes, eg.::
+
   {
       "eventID": "gfz2016ftod", 
       "magnitude": 4.0, 
