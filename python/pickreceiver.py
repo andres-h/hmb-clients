@@ -4,7 +4,7 @@ import sys
 from optparse import OptionParser
 from hmb.client import HMB
 
-VERSION = "0.1 (2016.090)"
+VERSION = "0.1 (2020.042)"
 
 RETRY_WAIT = 10
 
@@ -80,5 +80,9 @@ def main():
     worker(source)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+
+    except KeyboardInterrupt:
+        pass
 

@@ -8,7 +8,7 @@ import gnupg
 from optparse import OptionParser
 from hmb.client import HMB
 
-VERSION = "0.2 (2016.092)"
+VERSION = "0.2 (2020.042)"
 
 RETRY_WAIT = 10
 
@@ -95,5 +95,9 @@ def main():
     worker(source, gpg)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+
+    except KeyboardInterrupt:
+        pass
 
