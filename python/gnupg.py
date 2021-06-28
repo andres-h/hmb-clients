@@ -27,14 +27,14 @@ Vinay Sajip to make use of the subprocess module (Steve's version uses os.fork()
 and so does not work on Windows). Renamed to gnupg.py to avoid confusion with
 the previous versions.
 
-Modifications Copyright (C) 2008-2019 Vinay Sajip. All rights reserved.
+Modifications Copyright (C) 2008-2021 Vinay Sajip. All rights reserved.
 
 A unittest harness (test_gnupg.py) has also been added.
 """
 
-__version__ = "0.4.5"
+__version__ = "0.4.7"
 __author__ = "Vinay Sajip"
-__date__  = "$12-Aug-2019 15:58:03$"
+__date__  = "$11-Mar-2021 07:01:14$"
 
 try:
     from io import StringIO
@@ -349,17 +349,20 @@ class Verify(object):
                 # write to "/etc/foo" as a non-root user, a "permission denied"
                 # error will be sent as a non-status message.
                 message = 'error - %s' % value
-                parts = value.split()
-                if parts[-1].isdigit():
-                    code = int(parts[-1])
-                    system_error = bool(code & 0x8000)
-                    code = code & 0x7FFF
-                    if system_error:
-                        mapping = self.GPG_SYSTEM_ERROR_CODES
+                operation, code = value.rsplit(' ', 1)
+                if code.isdigit():
+                    code = int(code) & 0xFFFFFF  # lose the error source
+                    if self.gpg.error_map and code in self.gpg.error_map:
+                        message = '%s: %s' % (operation, self.gpg.error_map[code])
                     else:
-                        mapping = self.GPG_ERROR_CODES
-                    if code in mapping:
-                        message = mapping[code]
+                        system_error = bool(code & 0x8000)
+                        code = code & 0x7FFF
+                        if system_error:
+                            mapping = self.GPG_SYSTEM_ERROR_CODES
+                        else:
+                            mapping = self.GPG_ERROR_CODES
+                        if code in mapping:
+                            message = '%s: %s' % (operation, mapping[code])
                 if not self.status:
                     self.status = message
         elif key in ("DECRYPTION_INFO", "PLAINTEXT", "PLAINTEXT_LENGTH",
@@ -376,11 +379,10 @@ class ImportResult(object):
             sec_dups not_imported'''.split()
     def __init__(self, gpg):
         self.gpg = gpg
-        self.imported = []
         self.results = []
         self.fingerprints = []
         for result in self.counts:
-            setattr(self, result, None)
+            setattr(self, result, 0)
 
     def __nonzero__(self):
         if self.not_imported: return False
@@ -450,11 +452,11 @@ class ImportResult(object):
             logger.debug('message ignored: %s, %s', key, value)
 
     def summary(self):
-        l = []
-        l.append('%d imported' % self.imported)
+        result = []
+        result.append('%d imported' % self.imported)
         if self.not_imported:  # pragma: no cover
-            l.append('%d not imported' % self.not_imported)
-        return ', '.join(l)
+            result.append('%d not imported' % self.not_imported)
+        return ', '.join(result)
 
 ESCAPE_PATTERN = re.compile(r'\\x([0-9a-f][0-9a-f])', re.I)
 BASIC_ESCAPES = {
@@ -737,6 +739,10 @@ class DeleteResult(object):
     __bool__ = __nonzero__
 
 
+class TrustResult(DeleteResult):
+    pass
+
+
 class Sign(TextHandler):
     "Handle status messages for --sign"
     def __init__(self, gpg):
@@ -779,6 +785,8 @@ HEX_DIGITS_RE = re.compile(r'[0-9a-f]+$', re.I)
 
 class GPG(object):
 
+    error_map = None
+
     decode_errors = 'strict'
 
     result_map = {
@@ -791,6 +799,7 @@ class GPG(object):
         'scan': ScanKeys,
         'search': SearchKeys,
         'sign': Sign,
+        'trust': TrustResult,
         'verify': Verify,
         'export': ExportResult,
     }
@@ -990,7 +999,8 @@ class GPG(object):
         rr.start()
 
         stdout = process.stdout
-        dr = threading.Thread(target=self._read_data, args=(stdout, result, self.on_data))
+        dr = threading.Thread(target=self._read_data, args=(stdout, result,
+                              self.on_data))
         dr.setDaemon(True)
         logger.debug('stdout reader: %r', dr)
         dr.start()
@@ -1000,8 +1010,9 @@ class GPG(object):
         if writer is not None:
             writer.join()
         process.wait()
-        if process.returncode != 0:
-            logger.warning('gpg returned a non-zero error code: %d', process.returncode)
+        rc = process.returncode
+        if rc != 0:
+            logger.warning('gpg returned a non-zero error code: %d', rc)
         if stdin is not None:
             try:
                 stdin.close()
@@ -1155,7 +1166,7 @@ class GPG(object):
     # KEY MANAGEMENT
     #
 
-    def import_keys(self, key_data, extra_args=None):
+    def import_keys(self, key_data, extra_args=None, passphrase=None):
         """
         Import the key_data into our keyring.
         """
@@ -1165,7 +1176,7 @@ class GPG(object):
         args = ['--import']
         if extra_args:
             args.extend(extra_args)
-        self._handle_io(args, data, result, binary=True)
+        self._handle_io(args, data, result, passphrase=passphrase, binary=True)
         logger.debug('import_keys result: %r', result.__dict__)
         data.close()
         return result
@@ -1296,7 +1307,7 @@ class GPG(object):
                                 binary=True)
             finally:
                 f.close()
-        logger.debug('export_keys result: %r', result.data)
+        logger.debug('export_keys result[:100]: %r', result.data[:100])
         # Issue #49: Return bytes if armor not specified, else text
         result = result.data
         if armor:
@@ -1451,12 +1462,14 @@ class GPG(object):
         Generate --gen-key input per gpg doc/DETAILS
         """
         parms = {}
+        no_protection = kwargs.pop('no_protection', False)
         for key, val in list(kwargs.items()):
             key = key.replace('_','-').title()
             if str(val).strip():    # skip empty strings
                 parms[key] = val
         parms.setdefault('Key-Type','RSA')
-        parms.setdefault('Key-Length',2048)
+        if 'key_curve' not in kwargs:
+            parms.setdefault('Key-Length',2048)
         parms.setdefault('Name-Real', "Autogenerated Key")
         logname = (os.environ.get('LOGNAME') or os.environ.get('USERNAME') or
                    'unspecified')
@@ -1466,6 +1479,8 @@ class GPG(object):
         out = "Key-Type: %s\n" % parms.pop('Key-Type')
         for key, val in list(parms.items()):
             out += "%s: %s\n" % (key, val)
+        if no_protection:
+            out += '%no-protection\n'
         out += "%commit\n"
         return out
 
@@ -1530,7 +1545,7 @@ class GPG(object):
             args.extend(extra_args)
         result = self.result_map['crypt'](self)
         self._handle_io(args, file, result, passphrase=passphrase, binary=True)
-        logger.debug('encrypt result: %r', result.data)
+        logger.debug('encrypt result[:100]: %r', result.data[:100])
         return result
 
     def encrypt(self, data, recipients, **kwargs):
@@ -1600,7 +1615,7 @@ class GPG(object):
             args.extend(extra_args)
         result = self.result_map['crypt'](self)
         self._handle_io(args, file, result, passphrase, binary=True)
-        logger.debug('decrypt result: %r', result.data)
+        logger.debug('decrypt result[:100]: %r', result.data[:100])
         return result
 
     def trust_keys(self, fingerprints, trustlevel):
@@ -1623,9 +1638,12 @@ class GPG(object):
             logger.debug('writing ownertrust info: %s', s);
             os.write(fd, s.encode(self.encoding))
             os.close(fd)
-            result = self.result_map['delete'](self)
+            result = self.result_map['trust'](self)
             p = self._open_subprocess(['--import-ownertrust', fn])
             self._collect_output(p, result, stdin=p.stdin)
+            if p.returncode != 0:
+                raise ValueError('gpg returned an error - return code %d' %
+                                 p.returncode)
         finally:
             os.remove(fn)
         return result
