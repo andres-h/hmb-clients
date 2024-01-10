@@ -6,7 +6,8 @@ Install Go from https://golang.org/dl/
 then::
 
   export GOPATH=`pwd`
-  go get -u bitbucket.org/andresh/hmb-clients/src/eventpush
+  export GOPROXY=direct
+  go install bitbucket.org/andresh/hmb-clients/src/eventpush@latest
 
 eventpush will be automatically compiled and installed in $GOPATH/bin
 
